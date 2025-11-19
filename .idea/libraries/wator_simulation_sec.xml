@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="wator-simulation-sec">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/Versión_Secuencial/wator-simulation-sec.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
