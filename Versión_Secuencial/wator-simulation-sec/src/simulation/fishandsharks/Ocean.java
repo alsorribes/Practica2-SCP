@@ -1,18 +1,36 @@
+/* ---------------------------------------------------------------
+Práctica 2.
+Código fuente : Ocean.java
+Grado Informática
+39942072L Albert Sorribes Torrent.
+--------------------------------------------------------------- */
 package simulation.fishandsharks;
 
 import java.awt.Color;
 import java.awt.Point;
 import java.util.Arrays;
 
+/**
+ * Clase que representa el océano toroidal de la simulación Wa-Tor.
+ *
+ * MODIFICACIONES PARA CONCURRENCIA:
+ * - Métodos getField() y setField() declarados como synchronized
+ * - Métodos getFreeNeighbours(), getFishNeighbours(), getSharkNeighbours() sincronizados
+ * - Corrección en Shark.internalUpdate() para verificar null antes de acceder a celdas
+ *
+ * Estas modificaciones evitan condiciones de carrera cuando múltiples hilos
+ * acceden simultáneamente a las celdas del océano.
+ */
 public class Ocean {
-	// The energy received by sharks each time the eats a fish.
+	// Energía que recibe un tiburón al comer un pez
 	static final int DFishEnergy = 2;
 
+	// Máscara de vecinos (Norte, Este, Sur, Oeste)
 	public static final Point[] NEIGHBOUR_MASK = {
 			new Point(0, -1), new Point(1, 0), new Point(0, 1), new Point(-1, 0)
 	};
 
-	// Ocean/map cell matrix
+	// Matriz de celdas del océano
 	private Cell[][] ocean;
 	private int width, height;
 
@@ -24,6 +42,7 @@ public class Ocean {
 		this.width = width;
 		this.height = height;
 
+		// Inicializar todas las celdas a null (vacías)
 		for (int j = 0; j < ocean.length; j++) {
 			for (int i = 0; i < ocean[j].length; i++) {
 				ocean[j][i] = null;
@@ -31,12 +50,33 @@ public class Ocean {
 		}
 	}
 
-	// SINCRONIZADO: Evitar condiciones de carrera
+	/**
+	 * MODIFICACIÓN CONCURRENTE: synchronized
+	 * Establece el valor de una celda de forma thread-safe.
+	 *
+	 * El modificador synchronized evita que dos hilos modifiquen
+	 * la misma celda simultáneamente (condición de carrera).
+	 *
+	 * @param x Coordenada X (se aplica módulo para topología toroidal)
+	 * @param y Coordenada Y (se aplica módulo para topología toroidal)
+	 * @param value Nueva célula a colocar (puede ser null)
+	 * @return La celda que se colocó
+	 */
 	public synchronized Cell setField(int x, int y, Cell value) {
 		return ocean[(height+(y%height))%height][(width+(x%width))%width] = value;
 	}
 
-	// SINCRONIZADO: Evitar condiciones de carrera
+	/**
+	 * MODIFICACIÓN CONCURRENTE: synchronized
+	 * Obtiene el valor de una celda de forma thread-safe.
+	 *
+	 * El modificador synchronized evita leer una celda mientras
+	 * otro hilo la está modificando.
+	 *
+	 * @param x Coordenada X
+	 * @param y Coordenada Y
+	 * @return La celda en esa posición (puede ser null)
+	 */
 	public synchronized Cell getField(int x, int y) {
 		return ocean[(height+(y%height))%height][(width+(x%width))%width];
 	}
@@ -62,7 +102,14 @@ public class Ocean {
 		return buf.toString();
 	}
 
-	// Obtain the free neighbour cells from x,y position.
+	/**
+	 * MODIFICACIÓN CONCURRENTE: synchronized
+	 * Obtiene las celdas vecinas libres de forma atómica.
+	 *
+	 * @param x Coordenada X de la celda origen
+	 * @param y Coordenada Y de la celda origen
+	 * @return Array de posiciones de celdas vecinas libres
+	 */
 	public synchronized Point[] getFreeNeighbours(int x, int y) {
 		Point[] freeCells = {};
 		Cell cell;
@@ -81,7 +128,10 @@ public class Ocean {
 		return freeCells;
 	}
 
-	// Obtain the shark occupied neighbour cells from x,y position.
+	/**
+	 * MODIFICACIÓN CONCURRENTE: synchronized
+	 * Obtiene las celdas vecinas ocupadas por tiburones.
+	 */
 	public synchronized Point[] getSharkNeighbours(int x, int y) {
 		Point[] freeCells = {};
 		Cell cell;
@@ -100,7 +150,10 @@ public class Ocean {
 		return freeCells;
 	}
 
-	// Obtain the fish occupied neighbour cells from x,y position.
+	/**
+	 * MODIFICACIÓN CONCURRENTE: synchronized
+	 * Obtiene las celdas vecinas ocupadas por peces.
+	 */
 	public synchronized Point[] getFishNeighbours(int x, int y) {
 		Point[] freeCells = {};
 		Cell cell;
@@ -119,6 +172,9 @@ public class Ocean {
 		return freeCells;
 	}
 
+	/**
+	 * Ajusta las coordenadas para topología toroidal.
+	 */
 	private void checkPointBorders(Point pos) {
 		if (pos.x<0) pos.x = getWidth()-1;
 		if (pos.x>=getWidth()) pos.x = 0;
@@ -126,7 +182,7 @@ public class Ocean {
 		if (pos.y>=getHeight()) pos.y = 0;
 	}
 
-	// Ocean Cell based class
+	// Clase base abstracta para celdas del océano
 	public static abstract class Cell {
 
 		public static final Color OCEAN_LIGHT = new Color(0xE5F9FF),
@@ -167,38 +223,30 @@ public class Ocean {
 
 	}
 
-	// Fish cell class
+	// Clase para peces
 	public static class Fish extends Cell {
 
-		// Implements fish simulation rules
 		@Override
 		protected void internalUpdate(Ocean o, int x, int y, int generation,
 									  int fishCycle, int sharkCycle) {
 			Point[] freeNeighbors;
 
-			// Rule 1:
-			// A fish moves randomly to a neighbor field if it's free and
-			// he has regenerated from the last time
+			// Regla 1: Moverse a una celda vecina libre
 			freeNeighbors = o.getFreeNeighbours(x, y);
 			if (freeNeighbors.length > 0) {
-				// Get the new cell
 				Point newCell = getRandomly(freeNeighbors);
 
-				// Move this object to the new position
 				o.setField(x, y, null);
 				x = newCell.x;
 				y = newCell.y;
 				o.setField(x, y, this);
 			}
 
-			// Rule 2:
-			// On a neighbor field which is empty a new fish is born
+			// Regla 2: Reproducirse si se cumple el ciclo
 			freeNeighbors = o.getFreeNeighbours(x, y);
 			if (freeNeighbors.length > 0 && generation%fishCycle == 0) {
-				// Get the new cell
 				Point newCell = getRandomly(freeNeighbors);
 
-				// Create the new fish
 				o.setField(newCell.x, newCell.y, new Fish()).time =
 						super.time + 1;
 			}
@@ -216,23 +264,29 @@ public class Ocean {
 
 	}
 
-	// Shark cell class
+	// Clase para tiburones
 	public static class Shark extends Cell {
 
 		public int lifeIndex = 2;
 
-		// Implements shark simulation rules - CORREGIDO
+		/**
+		 * MODIFICACIÓN CONCURRENTE: Verificación de null añadida
+		 *
+		 * Se añade verificación cellAtFish != null antes de acceder a la celda.
+		 * Esto previene NullPointerException cuando otro hilo ya movió/comió el pez.
+		 */
 		@Override
 		protected void internalUpdate(Ocean o, int x, int y, int generation,
 									  int fishCycle, int sharkCycle) {
 			Point[] fishNeighbors;
 			Point[] freeNeighbors;
 
-			// Rule 1:
-			// A shark eats all fishes in neighborhood
+			// Regla 1: Comer peces vecinos
 			fishNeighbors = o.getFishNeighbours(x, y);
 			for (Point fish : fishNeighbors) {
-				// CORRECCIÓN: Verificar que la celda sigue siendo un pez
+				// CORRECCIÓN CONCURRENTE: Verificar que la celda todavía contiene un pez
+				// Entre getFishNeighbours() y este punto, otro hilo pudo haber
+				// movido o comido el pez, dejando la celda en null
 				Cell cellAtFish = o.getField(fish.x, fish.y);
 				if (cellAtFish != null && cellAtFish instanceof Fish) {
 					lifeIndex += DFishEnergy;
@@ -245,42 +299,32 @@ public class Ocean {
 				}
 			}
 
-			// Rule 2:
-			// If the shark eats nothing he moves to a free cell
+			// Regla 2: Moverse si no hay peces
 			freeNeighbors = o.getFreeNeighbours(x, y);
 			if (fishNeighbors.length < 1 && freeNeighbors.length > 0) {
-				// Get the new cell
 				Point newCell = getRandomly(freeNeighbors);
 
-				// Move this object to the new position
 				o.setField(x, y, null);
 				x = newCell.x;
 				y = newCell.y;
 				o.setField(x, y, this);
 			}
 
-			// Rule 3:
-			// On a neighbor field which is empty a new shark is born after
-			// regeneration
+			// Regla 3: Reproducirse si tiene energía suficiente
 			freeNeighbors = o.getFreeNeighbours(x, y);
 			if (freeNeighbors.length > 0 && generation%sharkCycle == 0) {
-				// Get the new cell
 				Point newCell = getRandomly(freeNeighbors);
 
-				// Create the new shark
 				o.setField(newCell.x, newCell.y, new Shark()).time =
 						super.time + 1;
 
-				// Create a children consume energy
 				lifeIndex--;
 			}
 
-			// Rule 4:
-			// A shark dies if he has nothing to eat two times
+			// Regla 4: Morir si no tiene energía
 			if (fishNeighbors.length < 1)
 				lifeIndex--;
 			if (lifeIndex < 1) {
-				// Remove this shark
 				o.setField(x, y, null);
 			}
 		}
