@@ -202,43 +202,70 @@ public class SharkFishSimulationGui extends JPanel implements ActionListener {
     		else
     			gol.notifyPlaceModeChanged(null);
     	}
-    	
-    	if (evt.getSource() == newButton)
-		{	// Creation new field.
 
-    		// Create a new model/ocean
-    		gol = new SharkFishModel((int) rows.getValue(), 
-    				(int) cols.getValue());
-    		
-    		// Add it to the view
-    		scroll.getViewport().removeAll();
-    		scroll.getViewport().add(gol);
-    		
-    		// Enable editor components
-    		setEnabled(true, stepButton, autoToggle, placeFish, 
-    				placeShark, placeNothing, slider, placeRandom, 
-    				newbornFish, newbornShark);
-    		
-    		// De-select all place buttons
-    		placeFish.setSelected(true);
-    		gol.notifyPlaceModeChanged(Fish.class);
-    	}
+		if (evt.getSource() == newButton) {
+			// Create a new model/ocean
+			gol = new SharkFishModel((int) rows.getValue(),
+					(int) cols.getValue());
 
-    	if ("step".equals(evt.getActionCommand())) {
-    		// Perform a step
-    		gol.step();
-    		
-    		// Update the statistical data
-    		generationCnt.setText(String.valueOf(gol.getGeneration()));
-    		
-    		// Update statistical data
-    		populationDiagram.addData(gol.getFishCount(), 
-    				gol.getSharkCount(), gol.getEmptyCount());
-    		fishCnt.setText(String.valueOf(gol.getFishCount()));
-    		sharkCnt.setText(String.valueOf(gol.getSharkCount()));
-    		
-    		popVar.setData(gol.getAgeDistribution());
-    	}
+			// ===== NUEVO: Añadir listener de extinción =====
+			gol.setExtinctionListener(new SharkFishModel.ExtinctionListener() {
+				@Override
+				public void onExtinction(int finalGeneration) {
+					// Detener automáticamente si está en modo Run
+					if (autoToggle.isSelected()) {
+						javax.swing.SwingUtilities.invokeLater(() -> {
+							autoToggle.doClick(); // Detener automáticamente
+						});
+					}
+				}
+			});
+
+			// Add it to the view
+			scroll.getViewport().removeAll();
+			scroll.getViewport().add(gol);
+
+			// Enable editor components
+			setEnabled(true, stepButton, autoToggle, placeFish,
+					placeShark, placeNothing, slider, placeRandom,
+					newbornFish, newbornShark);
+
+			// De-select all place buttons
+			placeFish.setSelected(true);
+			gol.notifyPlaceModeChanged(Fish.class);
+		}
+
+		if ("step".equals(evt.getActionCommand())) {
+			// Verificar si la simulación está activa
+			if (!gol.isSimulationActive()) {
+				// Detener el timer automático si está corriendo
+				if (autoToggle.isSelected()) {
+					autoToggle.doClick(); // Simula click para detener
+				}
+
+				JOptionPane.showMessageDialog(this,
+						"🔴 Extinción Total\n\n" +
+								"Todas las especies se han extinguido en la generación " + gol.getGeneration() + ".\n" +
+								"Crea un nuevo mundo para continuar.",
+						"Simulación Terminada",
+						JOptionPane.INFORMATION_MESSAGE);
+				return;
+			}
+
+			// Perform a step
+			gol.step();
+
+			// Update the statistical data
+			generationCnt.setText(String.valueOf(gol.getGeneration()));
+
+			// Update statistical data
+			populationDiagram.addData(gol.getFishCount(),
+					gol.getSharkCount(), gol.getEmptyCount());
+			fishCnt.setText(String.valueOf(gol.getFishCount()));
+			sharkCnt.setText(String.valueOf(gol.getSharkCount()));
+
+			popVar.setData(gol.getAgeDistribution());
+		}
     	
     	if ("auto".equals(evt.getActionCommand())) {
 			// Starts the automatic step simulation through a timer

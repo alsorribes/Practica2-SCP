@@ -9,6 +9,7 @@ import java.util.Random;
 import java.util.TreeMap;
 
 import javax.swing.JComponent;
+import javax.swing.JOptionPane;
 
 import simulation.fishandsharks.Ocean.Cell;
 import simulation.fishandsharks.Ocean.Fish;
@@ -31,8 +32,12 @@ public class SharkFishModel extends JComponent implements MouseListener {
 	// ===== NUEVOS CAMPOS PARA CONCURRENCIA =====
 	private SimulationWorker[] workers;
 	private SynchronizationManager syncManager;
-	private static final int NUM_THREADS = 4; // Configurable
-	private boolean concurrentMode = true; // true = concurrente, false = secuencial
+	private static final int NUM_THREADS = 4;
+	private boolean concurrentMode = true;
+
+	// ===== NUEVO: Control de extinción =====
+	private boolean simulationActive = true;
+	private ExtinctionListener extinctionListener;
 
 	public SharkFishModel(int width, int height) {
 		ocean = new Ocean(width, height);
@@ -48,13 +53,11 @@ public class SharkFishModel extends JComponent implements MouseListener {
 
 		ageDistribution = new TreeMap<Integer, int[]>();
 
-		// Inicializar hilos
 		if (concurrentMode) {
 			initializeThreads();
 		}
 	}
 
-	// ===== INICIALIZACIÓN DE HILOS =====
 	private void initializeThreads() {
 		System.out.println("=== Inicializando modo CONCURRENTE con " + NUM_THREADS + " hilos ===");
 
@@ -120,6 +123,11 @@ public class SharkFishModel extends JComponent implements MouseListener {
 			ocean.setField(r.nextInt(w), r.nextInt(h), getNewCellInstance());
 
 		newType = b4;
+
+		// Reiniciar estado de simulación
+		simulationActive = true;
+		generation = 0;
+
 		repaint();
 	}
 
@@ -139,13 +147,17 @@ public class SharkFishModel extends JComponent implements MouseListener {
 
 	// ===== MÉTODO STEP MODIFICADO =====
 	public void step() {
+		// Verificar si la simulación está activa
+		if (!simulationActive) {
+			System.out.println("⚠️ Simulación detenida: todas las especies extintas");
+			return;
+		}
+
 		long start = System.nanoTime();
 
 		if (concurrentMode && workers != null) {
-			// MODO CONCURRENTE
 			stepConcurrent();
 		} else {
-			// MODO SECUENCIAL (original)
 			stepSequential();
 		}
 
@@ -155,6 +167,9 @@ public class SharkFishModel extends JComponent implements MouseListener {
 		System.out.println("Step " + generation + ": " + (elapsed*1e-9) + " s (" +
 				(concurrentMode ? "CONCURRENTE" : "SECUENCIAL") + ")");
 
+		// ===== NUEVO: Verificar extinción =====
+		checkExtinction();
+
 		repaint();
 	}
 
@@ -163,13 +178,9 @@ public class SharkFishModel extends JComponent implements MouseListener {
 	 */
 	private void stepConcurrent() {
 		try {
-			// 1. Iniciar nueva generación (los hilos arrancan)
 			syncManager.startNewGeneration();
-
-			// 2. Esperar a que todos calculen estadísticas
 			syncManager.waitForStatistics();
 
-			// 3. Obtener estadísticas globales
 			int[] stats = syncManager.getStatistics();
 			fishCnt = stats[0];
 			sharkCnt = stats[1];
@@ -226,7 +237,50 @@ public class SharkFishModel extends JComponent implements MouseListener {
 		}
 	}
 
-	// ===== MÉTODOS DE ACCESO PARA LOS WORKERS =====
+	// ===== NUEVO: Verificar extinción =====
+	/**
+	 * Verifica si todas las especies se han extinguido y detiene la simulación
+	 */
+	private void checkExtinction() {
+		if (fishCnt == 0 && sharkCnt == 0) {
+			simulationActive = false;
+
+			System.out.println("\n" + "=".repeat(60));
+			System.out.println("🔴 EXTINCIÓN TOTAL - Generación " + generation);
+			System.out.println("=".repeat(60));
+			System.out.println("📊 Estadísticas finales:");
+			System.out.println("   - Peces: " + fishCnt);
+			System.out.println("   - Tiburones: " + sharkCnt);
+			System.out.println("   - Celdas vacías: " + emptyCnt);
+			System.out.println("   - Generaciones totales: " + generation);
+			System.out.println("=".repeat(60) + "\n");
+
+			// Notificar a la GUI
+			if (extinctionListener != null) {
+				extinctionListener.onExtinction(generation);
+			}
+		} else if (fishCnt == 0) {
+			System.out.println("⚠️ Peces extintos en generación " + generation +
+					" (quedan " + sharkCnt + " tiburones)");
+		} else if (sharkCnt == 0) {
+			System.out.println("⚠️ Tiburones extintos en generación " + generation +
+					" (quedan " + fishCnt + " peces)");
+		}
+	}
+
+	// ===== NUEVO: Interface para notificar extinción =====
+	public interface ExtinctionListener {
+		void onExtinction(int finalGeneration);
+	}
+
+	public void setExtinctionListener(ExtinctionListener listener) {
+		this.extinctionListener = listener;
+	}
+
+	public boolean isSimulationActive() {
+		return simulationActive;
+	}
+
 	public Ocean getOcean() {
 		return ocean;
 	}
@@ -239,10 +293,10 @@ public class SharkFishModel extends JComponent implements MouseListener {
 		return sharkRebornCycle;
 	}
 
-	// ===== SHUTDOWN (llamar al cerrar) =====
 	public void shutdown() {
 		if (workers != null) {
 			System.out.println("Finalizando hilos...");
+			simulationActive = false;
 			for (SimulationWorker worker : workers) {
 				worker.stopWorker();
 			}
