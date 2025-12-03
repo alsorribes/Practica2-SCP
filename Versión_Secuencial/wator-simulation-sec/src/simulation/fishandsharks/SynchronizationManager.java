@@ -3,6 +3,7 @@ Práctica 2.
 Código fuente : SynchronizationManager.java
 Grado Informática
 39942072L Albert Sorribes Torrent.
+X9321862P Porosnicu, Valentin Alexandru
 --------------------------------------------------------------- */
 package simulation.fishandsharks;
 
